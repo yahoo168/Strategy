@@ -45,8 +45,10 @@ class Strategy(object):
 		universe_data_df_dict = dict()
 		universe_data_df_dict["adjclose"] = self.db.get_universe_df(self.universe_ticker_list, data_type="adjclose", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
 		universe_data_df_dict["open"] = self.db.get_universe_df(self.universe_ticker_list, data_type="open", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
+		universe_data_df_dict["close"] = self.db.get_universe_df(self.universe_ticker_list, data_type="close", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
 		universe_data_df_dict["high"] = self.db.get_universe_df(self.universe_ticker_list, data_type="high", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
 		universe_data_df_dict["low"] = self.db.get_universe_df(self.universe_ticker_list, data_type="low", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
+		universe_data_df_dict["volume"] = self.db.get_universe_df(self.universe_ticker_list, data_type="volume", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
 		return universe_data_df_dict
 
 	def _hyperParameters_dict(self):
@@ -89,7 +91,7 @@ class Strategy(object):
 
 		change_date_list.sort()
 		return change_date_list
-	
+		
 	#取得其他策略的權重(可用於混合搭配)
 	#待改：
 	# def get_weight_df_from_other(self, strategyClass):

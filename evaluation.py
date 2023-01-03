@@ -50,6 +50,7 @@ def cal_maxdrawdown(value_series):
                 MDD_e_date = date
                 MDD = drawdown
 
+    # 回傳MDD起始日（起跌日）與MDD結束日（谷底）
     return(round(MDD,2), (MDD_s_date, MDD_e_date))
 
 #計算勝率，每日比對策略與大盤的百分比變動高低

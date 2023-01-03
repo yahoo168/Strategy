@@ -63,18 +63,19 @@ class Backtest(object):
         
         changeDate_list = self.weight_df.index
         holder_ticker_list = self.weight_df.columns
-
+        
         #從策略權重矩陣取得持有標的列表，以此取得調整價
         self.adjclose_df = self.db.get_universe_df(holder_ticker_list, 
-            data_type="adjclose", start_date=self.start_date, end_date=self.end_date, data_format="all")
+             data_type="adjclose", start_date=self.start_date, end_date=self.end_date, data_format="all")
         
-        #因應部分策略每日調倉，可不進行矩陣分拆，以加速計算
+        #因應部分策略每日皆有給定權重，可不進行矩陣分拆，以加速計算
         #待改：上面的權重矩陣調整會影響此部分(因在回測期末多加一日權重，導致長度不一)
-        if len(self.adjclose_df) == len(self.weight_df):
-            pct_change_df = self.adjclose_df.pct_change().fillna(0)
+        
+        pct_change_df = self.adjclose_df.pct_change()
+        if len(pct_change_df) == len(self.weight_df):
             self.sum_percent_series = (pct_change_df * self.weight_df).sum(axis=1)
             weight_diff_df = self.weight_df.shift(1) - self.weight_df
-            self.performance["Commission Fee Series"] = (abs(weight_diff_df) * self.options["commission_rate"]).fillna(0).value
+            self.performance["Commission Fee Series"] = (abs(weight_diff_df) * self.options["commission_rate"]).fillna(0).values
             #透過百分比變動計算資產組合的日報酬，資產初始金額由options給定
             self.sum_value_series = (self.sum_percent_series+1).cumprod() * self.options["initial_value"]    
         
@@ -218,20 +219,20 @@ class Backtest(object):
         ax2 = ax1.twinx()           # 做镜像处理
 
         weight_sum_series = self.weight_df.sum(axis=1)
-        #self.sum_value_series.plot(label="Strategy", legend=True)
+        # x軸：日期
         x = self.sum_value_series.index
+        y1 = self.sum_value_series.values
+        #y3 = weight_sum_series[weight_sum_series.index == x].values
+        ax1.plot(x, y1)
         if self.options["benchmark"] != "None":
+            # y2: benchmark績效
             y2 = self.benchmark_data_dict["value"]
             ax1.plot(x, y2)
+        # y1: 策略績效
         
-        y1 = self.sum_value_series.values
-        y3 = weight_sum_series[weight_sum_series.index == x].values
-        
-        ax1.plot(x, y1)
-        # ax2.plot(x, y3,'g-')
         
         ax1.set_xlabel("Date")    #设置x轴标题
-        ax1.set_ylabel("Value", color='b')   #设置Y1轴标题
+        # ax1.set_ylabel("Value", color='b')   #设置Y1轴标题
         # ax2.set_ylabel("Weight",color ='g')   #设置Y2轴标题
         
         plt.show()
