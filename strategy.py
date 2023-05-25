@@ -3,25 +3,24 @@ import copy
 
 class Strategy(object):
 	def __init__(self, universe_ticker_list:list, options=dict()):
-		#讀取同層資料夾下的option.txt，取得預設的回測設置
+		# 讀取同層資料夾下的option.txt，取得預設的回測設置
 		self.options = self._read_options()
-		#在策略頁面若有調整則更新回測選項
+		# 在策略頁面若有調整則更新回測選項
 		self.options.update(options)
-		#建立資料庫
+		# 建立資料庫
 		self.db = Database(self.options["database_path"])
-		#調整原始設定的日期，改為最接近該日的下一個交易日（若該日即為交易日則不變）
-		self.options["start_date"] = self.db.get_next_tradeDate(datetime.strptime(self.options["start_date"], "%Y-%m-%d"), shift_days=self.options["decay_days"], country=self.options["country"])
-		self.options["end_date"] = self.db.get_next_tradeDate(datetime.strptime(self.options["end_date"], "%Y-%m-%d"), shift_days=self.options["decay_days"], country=self.options["country"])
+		# 調整原始設定的日期，改為最接近該日的下一個交易日（若該日即為交易日則不變）
+		self.options["start_date"] = self.db.get_next_tradeDate(self.options["start_date"], shift_days=self.options["decay_days"], country=self.options["country"])
+		self.options["end_date"] = self.db.get_next_tradeDate(self.options["end_date"], shift_days=self.options["decay_days"], country=self.options["country"])
+		self.universe_name = self.options["universe_name"]
 		self.universe_ticker_list = universe_ticker_list
-		self.weight_df = pd.DataFrame()
-		
-		#待改: 改成外部讀入
+		self.weight_df = pd.DataFrame()	
+		# 待改: 改成外部讀入
 		self.hyperParameters_dict = self.options["hyperParameters_dict"]
-		self.universe_data_df_dict = self._load_universe_data()
+		# self.universe_data_df_dict = self._load_universe_data()
 	
 	def _read_options(self):
 		options = dict()
-
 		with open('options.txt') as f:
 			lines = f.readlines()
 			for line in lines:
@@ -41,16 +40,32 @@ class Strategy(object):
 		return options
 
 	# 載入標的開高低收資料
+	# 待改：好像不會用到了
 	def _load_universe_data(self):
 		universe_data_df_dict = dict()
-		universe_data_df_dict["adjclose"] = self.db.get_universe_df(self.universe_ticker_list, data_type="adjclose", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
-		universe_data_df_dict["open"] = self.db.get_universe_df(self.universe_ticker_list, data_type="open", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
-		universe_data_df_dict["close"] = self.db.get_universe_df(self.universe_ticker_list, data_type="close", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
-		universe_data_df_dict["high"] = self.db.get_universe_df(self.universe_ticker_list, data_type="high", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
-		universe_data_df_dict["low"] = self.db.get_universe_df(self.universe_ticker_list, data_type="low", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
-		universe_data_df_dict["volume"] = self.db.get_universe_df(self.universe_ticker_list, data_type="volume", start_date=self.options["start_date"], end_date=self.options["end_date"], data_format="all")
+		universe_data_df_dict["adjclose"] = self.db.get_stock_data_df(item="open", target_ticker_list=self.universe_ticker_list, \
+													start_date=self.options["start_date"], end_date=self.options["end_date"], country=self.options["country"])
 		return universe_data_df_dict
 
+	def get_universe_df(self, item, pre_fetch_nums=0):
+		item_df = self.db.get_cache_df(asset_class="stock", universe_name=self.options["universe_name"], item=item, \
+									   start_date=self.options["start_date"], end_date=self.options["end_date"], \
+									   country=self.options["country"], pre_fetch_nums=pre_fetch_nums)
+		
+		if item_df.empty == True:
+			item_df = self.db.get_stock_data_df(item=item, target_ticker_list=self.universe_ticker_list, \
+										start_date=self.options["start_date"], end_date=self.options["end_date"], \
+										country=self.options["country"], pre_fetch_nums=pre_fetch_nums)
+		
+			cache_folderPath = os.path.join(self.db.cache_folderPath, "stock", self.options["universe_name"])
+			make_folder(cache_folderPath)
+			start_date = self.options["start_date"] + timedelta(days = -pre_fetch_nums)
+			fileName = item + '_' + datetime2str(start_date) + '_' + datetime2str(self.options["end_date"]) + ".csv"
+			filePath = os.path.join(cache_folderPath, fileName)
+			item_df.to_csv(filePath)
+
+		return item_df
+	
 	def _hyperParameters_dict(self):
 		pass
 	
@@ -91,13 +106,6 @@ class Strategy(object):
 
 		change_date_list.sort()
 		return change_date_list
-		
-	#取得其他策略的權重(可用於混合搭配)
-	#待改：
-	# def get_weight_df_from_other(self, strategyClass):
-	# 	strategy = strategyClass(self.options["start_date"], self.options["end_date"], self.universe_data_df_dict, self.options)
-	# 	strategy.reset()
-	# 	return strategy.cal_weight()
 
 	#取得回測期間中的所有交易日
 	def _get_backtest_period_tradeDate_list(self):
@@ -116,50 +124,27 @@ class Strategy(object):
 		assert(weight_df.index[-1]<=options["end_date"]), "權重矩陣結束日期，不可晚於回測期間結束日（已調整後的實際交易日）"
 	
 	#計算回測損益與評估績效，並依選項儲存回測紀錄與顯示績效圖表
-	def cal_pnl(self, show_evaluation=True, show_figure=True, save_record=True):
+	def cal_pnl(self, show_evaluation=True, show_figure=True, save_record=True, generate_report=False):
 		#取得策略權重矩陣
 		weight_df = self.cal_weight()
-		
 		#檢查策略輸出的權重矩陣是否符合基本規範
 		self._check_weight_df(weight_df, self.options)
-		
 		#使用權重矩陣建立回測物件
-		backtest = Backtest(weight_df, self.options)
-		
+		backtest = Backtest(weight_df, self.db, self.options)
 		#計算回測損益
 		backtest.activate()
-		
 		#評估績效
 		backtest.evaluate(show=show_evaluation)
-
 		#儲存回測紀錄
 		if save_record == True:
 			backtest.save_record()
-		
 		#顯示績效圖表
 		if show_figure == True:
 			backtest.show_figure()
+		if generate_report == True:
+			backtest.generate_report()
 
 		return backtest
-
-	#策略計算權重時可調用，使策略得以觀察目前的損益情形以調整後續權重（如風險預算），須指定計算日期
-	#註：Backtest預設為計算損益至指定日期前一日收盤
-	def _cal_partial_pnl(self, weight_df:pd.DataFrame(), current_date:datetime):
-		#作深複製以避免改動原先的options，並將原end_date改為當前日期，計算損益
-		options = copy.deepcopy(self.options)
-		options["end_date"] = current_date.strftime("%Y-%m-%d")
-		self._check_weight_df(weight_df, options)
-		backtest = Backtest(weight_df, options)
-		backtest.activate()
-		
-		initial_value = backtest.sum_value_series[0]
-		end_value = backtest.sum_value_series[-1]
-		pnl = (end_value/initial_value)-1
-		return pnl
-
-	#尋找最佳化參數與測試參數敏感度
-	def parameter_sensitive_test(self):
-		pass
 	
 	#產生包含所有試驗參數組合的字典
 	def _generate_parameters(self, testPara_name_list, low_bound, high_bound, times):
@@ -262,9 +247,8 @@ class Strategy(object):
 		
 		print("參數最佳化可達成的最大Sharpe Ratio為{max_sharpe}，其參數組合為: ".format(max_sharpe=max_sharpe), argmax_dict)
 		return max_sharpe, argmax_dict
-
-# 待改：每年重新執行的策略績效～～
-
+		
+# 每年重新執行的策略績效
 # perfomance_per_yr_df = pd.DataFrame(index=range(2008, 2020), columns=["Return", "Std", "Sharpe", "MaxDrawdown"])
 # for yr in range(2008, 2021):
 #     op = options.copy()

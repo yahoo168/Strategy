@@ -4,13 +4,12 @@ from datetime import datetime, timedelta
 from math import sqrt
 from .utils import *
 
-#計算平均手續費
+# 計算平均年化手續費
 def cal_avg_commision(fee_series, freq):
     freq_days = freq_to_days(freq)
-    mean_fee = fee_series.mean()
-    return mean_fee * (252/freq_days)
+    return fee_series.mean() * (252/freq_days)
 
-#計算基本績效指標（平均報酬 / 平均波動 / 平均夏普）
+# 計算基本績效指標（平均報酬 / 平均波動 / 平均夏普）
 def cal_basic_performance(sum_percent_series, period=252):
     #計算rolling平均報酬
     return_rolling = (1+sum_percent_series).rolling(period).apply(np.prod, raw=True) - 1
@@ -25,7 +24,6 @@ def cal_basic_performance(sum_percent_series, period=252):
     return avg_return, avg_volatility, avg_sharpe
 
 # 計算MDD，回傳MDD與 起始日 / 結束日
-# 待改：有更直觀的作法，參考notion/資產配置/統計指標
 def cal_maxdrawdown(value_series):
     #紀錄近期資產價值最高的日期，預設為第一日
     peak_date = value_series.index[0]
@@ -36,7 +34,7 @@ def cal_maxdrawdown(value_series):
     MDD_e_date = value_series.index[0]
     MDD = 0
 
-    for date, v in value_series.iteritems():
+    for date, v in value_series.items():
         #若價值突破前波高點，則更新高點日期與高點價值
         if v >= peak_value:
             peak_date = date
@@ -53,9 +51,24 @@ def cal_maxdrawdown(value_series):
     # 回傳MDD起始日（起跌日）與MDD結束日（谷底）
     return(round(MDD,2), (MDD_s_date, MDD_e_date))
 
+# 待改：有更直觀的作法，參考如下：
+# def MaxDrawdown(return_series: pd.Series):
+#     """Takes a time series of asset returns.
+#        Return:
+#            1. MDD
+#            2. MDD's Date
+#     """
+#     wealth_index = 1000*(1+return_series).cumprod()
+#     previous_peaks = wealth_index.cummax()
+#     drawdowns = (wealth_index - previous_peaks)/previous_peaks
+#     return drawdowns.min(), drawdowns.idxmin()
+
 #計算勝率，每日比對策略與大盤的百分比變動高低
 def cal_win_rate(sum_percent_series, benchmark_percent_series):
-    win_series = sum_percent_series > benchmark_percent_series
+    # 因sum_percent_series在拆分區間進行處理，會導致合成後有精度誤差
+    # 若單一標的以自身為benchmark，會出現win_rate>0的狀況，故設置ERROR_THERESHOLD避免
+    ERROR_THERESHOLD = 0.000000000000001
+    win_series = sum_percent_series > (benchmark_percent_series + ERROR_THERESHOLD)
     win_rate = round((win_series.sum() / len(win_series)), 2)
     cum_win_series = (sum_percent_series - benchmark_percent_series)
     
@@ -113,7 +126,7 @@ def cal_performance_per_yr(sum_percent_series, benchmark_percent_series):
         perfomance_per_yr_df.loc[yr, "Return"] = round(yr_return, 2)
         perfomance_per_yr_df.loc[yr, "Std"] = round(yr_std, 2)
         perfomance_per_yr_df.loc[yr, "Sharpe"] = round(yr_sharpe, 2)
-        perfomance_per_yr_df.loc[yr, "MaxDrawdown"] = round(MDD, 2)
+        perfomance_per_yr_df.loc[yr, "MDD"] = round(MDD, 2)
         perfomance_per_yr_df.loc[yr, "MDD_s_date"] = MDD_s_date
         perfomance_per_yr_df.loc[yr, "MDD_e_date"] = MDD_e_date
         perfomance_per_yr_df.loc[yr, "Win Rate"] = win_rate
@@ -171,7 +184,7 @@ def cal_performance_per_quarter(sum_percent_series, benchmark_percent_series):
         perfomance_per_Qr_df.loc[Qr, "Return"] = round(Qr_return, 2)
         perfomance_per_Qr_df.loc[Qr, "Std"] = round(Qr_std, 2)
         perfomance_per_Qr_df.loc[Qr, "Sharpe"] = round(Qr_sharpe, 2)
-        perfomance_per_Qr_df.loc[Qr, "MaxDrawdown"] = round(MDD, 2)
+        perfomance_per_Qr_df.loc[Qr, "MDD"] = round(MDD, 2)
         perfomance_per_Qr_df.loc[Qr, "MDD_s_date"] = MDD_s_date
         perfomance_per_Qr_df.loc[Qr, "MDD_e_date"] = MDD_e_date
         perfomance_per_Qr_df.loc[Qr, "Win Rate"] = win_rate
@@ -220,7 +233,7 @@ def cal_performance_per_month(sum_percent_series, benchmark_percent_series):
         perfomance_per_month_df.loc[month, "Return"] = month_return
         perfomance_per_month_df.loc[month, "Std"] = month_std
         perfomance_per_month_df.loc[month, "Sharpe"] = month_sharpe
-        perfomance_per_month_df.loc[month, "MaxDrawdown"] = MDD
+        perfomance_per_month_df.loc[month, "MDD"] = MDD
         perfomance_per_month_df.loc[month, "MDD_s_date"] = MDD_s_date
         perfomance_per_month_df.loc[month, "MDD_e_date"] = MDD_e_date
         perfomance_per_month_df.loc[month, "Win Rate"] = win_rate
@@ -241,3 +254,45 @@ def cal_profit_ratio(percent_df=None, freq="month"):
     de_extreme_ratio_df[de_extreme_ratio_df < -1] = -1
     
     return de_extreme_ratio_df, ratio_df
+
+# 分析持倉各指標
+def analyze_weight_df(self, weight_df, rank_nums):
+    weight_analysis_dict = dict()
+    # 各標的平均持倉
+    avg_weight_per_ticker_df = weight_df.mean().sort_values(ascending=False).apply(lambda x: str(round(100*x,2))+"%")
+    # 只顯示平均前N大持倉
+    avg_weight_per_ticker_df = avg_weight_per_ticker_df.to_frame(name="Weight").head(rank_nums)
+    
+    # 持倉檔數
+    max_holding_nums = (weight_df>0).sum(axis=1).max()
+    min_holding_nums = (weight_df>0).sum(axis=1).min()
+    mean_holding_nums = (weight_df>0).sum(axis=1).mean()
+    
+    # 計算前N大持倉平均權重
+    weight_rank_df = weight_df.rank(axis=1, ascending=False)
+    filtered_weight_list = list()
+    for rank_num in range(1, rank_nums+1):
+        filtered_df = weight_df[weight_rank_df == rank_num]
+        filtered_weight = filtered_df.sum(axis=1).mean()
+        filtered_weight_list.append(round(filtered_weight, 2))
+
+    # 前N大持倉平均權重
+    N_rank_weight_series = pd.Series(filtered_weight_list, index=range(1, rank_nums+1))
+    # 換倉率序列 
+    turnover_rate_series = abs(weight_df.diff()).sum(axis=1)
+    # 換倉區間的平均日數
+    avg_changeDate_interval_days = pd.Series(weight_df.index).diff().mean().days
+    # 年化換手率(待改：是否應以期末價格影響後的權重計算？)
+    annualized_turnover_rate = turnover_rate_series.mean() * (252/avg_changeDate_interval_days)
+    # 總倉位序列 
+    weight_series = weight_df.sum(axis=1)
+
+    weight_analysis_dict["avg_weight_per_ticker"] = avg_weight_per_ticker_df
+    weight_analysis_dict["max_holding_nums"] = max_holding_nums
+    weight_analysis_dict["min_holding_nums"] = min_holding_nums
+    weight_analysis_dict["mean_holding_nums"] = mean_holding_nums
+    weight_analysis_dict["N_rank_weight_series"] = N_rank_weight_series
+    weight_analysis_dict["turnover_rate_series"] = turnover_rate_series
+    weight_analysis_dict["annualized_turnover_rate"] = annualized_turnover_rate
+    weight_analysis_dict["weight_series"] = weight_series
+    return weight_analysis_dict
